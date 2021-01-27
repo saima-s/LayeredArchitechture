@@ -1,97 +1,91 @@
 package store
+
 import "C"
 import (
 	customer "Clean-Architecture/entities"
+	error1 "Clean-Architecture/errorPackage"
 	"database/sql"
-	"errors"
-	"fmt"
 	"log"
 )
 
 type CustomerStorer struct {
 	db *sql.DB
 }
-func (c CustomerStorer)CloseDB(){
-	 c.db.Close()
+
+func (c CustomerStorer) CloseDB() {
+	c.db.Close()
 }
 func New() CustomerStorer {
 	var db, err = sql.Open("mysql", "root:saima@123Sult@/CustomerDB")
 	if err != nil {
-		panic(err)
+		log.Fatal(error1.DbError)
 	}
 	err = db.Ping()
 	if err != nil {
-		panic(err.Error())
+		log.Fatal(error1.DbError)
 	}
 	return CustomerStorer{db: db}
 }
-func (c CustomerStorer) GetByName(name string) (customer.Customer,error) {
+func (c CustomerStorer) GetByName(name string) (customer.Customer, error) {
 	query := "SELECT * FROM Customers INNER JOIN Address ON Customers.ID = Address.CustId;"
-	if name ==""{
-		fmt.Println("empty name")
-		return customer.Customer{},errors.New("Name is empty")
-	}
 	var data []interface{}
-	if name !=""{
-		query = "SELECT * FROM Customers INNER JOIN Address ON Customers.ID = Address.CustId where Customers.Name = ?;"
-		data = append(data, name)
-	}
-	 rows, err := c.db.Query(query, data...)
+	query = "SELECT * FROM Customers INNER JOIN Address ON Customers.ID = Address.CustId where Customers.Name = ?;"
+	data = append(data, name)
+	rows, err := c.db.Query(query, data...)
 	if err != nil {
-		panic(err.Error())
+		return customer.Customer{}, error1.NoDataError
 	}
 	defer rows.Close()
 	var cust customer.Customer
 	for rows.Next() {
 		if err := rows.Scan(&cust.ID, &cust.Name, &cust.DOB, &cust.Address.ID, &cust.Address.City, &cust.Address.State, &cust.Address.StreetName, &cust.Address.CustId); err != nil {
-			log.Fatal(err)
+			return customer.Customer{}, err
 		}
 	}
-	return cust,nil
+	return cust, nil
 }
-
-func (c CustomerStorer) GetAll() ([]customer.Customer,error) {
+func (c CustomerStorer) GetAll() ([]customer.Customer, error) {
 	query := "SELECT * FROM Customers INNER JOIN Address ON Customers.ID = Address.CustId;"
 	rows, err := c.db.Query(query)
 	if err != nil {
-		panic(err.Error())
+		return []customer.Customer{}, error1.NoDataError
 	}
 	defer rows.Close()
 	var result []customer.Customer
 	for rows.Next() {
 		var cust customer.Customer
 		if err := rows.Scan(&cust.ID, &cust.Name, &cust.DOB, &cust.Address.ID, &cust.Address.City, &cust.Address.State, &cust.Address.StreetName, &cust.Address.CustId); err != nil {
-			log.Fatal(err)
+			return []customer.Customer{}, err
 		}
 		result = append(result, cust)
 	}
-	return result,nil
+	return result, nil
 }
-func (c CustomerStorer) GetById(id int) (customer.Customer,error) {
+func (c CustomerStorer) GetById(id int) (customer.Customer, error) {
 	var ids []interface{}
 	ids = append(ids, id)
 	query := `SELECT * FROM Customers INNER JOIN Address ON Customers.ID = Address.CustId where Customers.ID = ?; `
 	rows, err := c.db.Query(query, ids...)
 	if err != nil {
-		return customer.Customer{}, err
+		return customer.Customer{}, error1.NoDataError
 	}
 	defer rows.Close()
 	var cust customer.Customer
 	for rows.Next() {
 		if err := rows.Scan(&cust.ID, &cust.Name, &cust.DOB, &cust.Address.ID, &cust.Address.City, &cust.Address.State, &cust.Address.StreetName, &cust.Address.CustId); err != nil {
-			log.Fatal(err)
+			return customer.Customer{}, err
 		}
 	}
-	return cust,nil
+	return cust, nil
 }
-func (c CustomerStorer) Create(customer1 customer.Customer) (customer.Customer,error) {
+func (c CustomerStorer) Create(customer1 customer.Customer) (customer.Customer, error) {
 	var customers []interface{}
 	customers = append(customers, customer1.Name)
 	customers = append(customers, customer1.DOB)
 	query := `INSERT INTO Customers(name, DOB) VALUES(?,?);`
 	rows, err := c.db.Exec(query, customers...)
 	if err != nil {
-		panic(err.Error())
+		return customer.Customer{}, err
 	}
 	id, _ := rows.LastInsertId()
 	var addr []interface{}
@@ -102,114 +96,94 @@ func (c CustomerStorer) Create(customer1 customer.Customer) (customer.Customer,e
 	query1 := `INSERT INTO Address(City,State,StreetName,CustId) VALUES(?,?,?,?)`
 	row, err1 := c.db.Exec(query1, addr...)
 	if err1 != nil {
-		panic(err.Error())
+		return customer.Customer{}, err1
 	}
 	idAddr, _ := row.LastInsertId()
 	customer1.ID = int(id)
 	customer1.Address.ID = int(idAddr)
 	customer1.Address.CustId = int(id)
-	return customer1,nil
+	return customer1, nil
 }
-func (c CustomerStorer) Edit(id int, customer2 customer.Customer) (customer.Customer,error) {
+func (c CustomerStorer) Edit(id int, customer2 customer.Customer) (customer.Customer, error) {
 	query1 := `SELECT * from Customers where ID =?`
 	var id1 []interface{}
 	id1 = append(id1, id)
 	_, err := c.db.Query(query1, id1...)
 	if err != nil {
-		panic(err.Error())
+		return customer.Customer{}, err
 	}
-		if customer2.Name != "" {
-			_, err := c.db.Exec("update Customers set Name=? where ID=?", customer2.Name, id)
-			if err != nil {
-				return customer.Customer{},errors.New("Name is empty in update")
-			}
-			var custId []interface{}
-			custId = append(custId, id)
-			q := `SELECT * FROM Customers INNER JOIN Address ON Customers.ID = Address.CustId  where Address.CustID =?`
-			r, _ := c.db.Query(q, custId...)
-			var cu customer.Customer
-			for r.Next() {
-				e := r.Scan(&cu.ID, &cu.Name, &cu.DOB, &cu.Address.ID, &cu.Address.City, &cu.Address.State, &cu.Address.StreetName, &cu.Address.CustId)
-				if e != nil {
-					log.Fatal(e)
-				}
-			}
-			var data []interface{}
-			query := "update Address set "
-			if customer2.Address.City != "" {
-				query += "City = ? ,"
-				data = append(data, customer2.Address.City)
-			}
-			if customer2.Address.State != "" {
-				query += "State = ? ,"
-				data = append(data, customer2.Address.State)
-			}
-			if customer2.Address.StreetName != "" {
-				query += "StreetName = ? ,"
-				data = append(data, customer2.Address.StreetName)
-			}
-			query = query[:len(query)-1]
-			query += "where CustId = ? and ID = ?"
-			data = append(data, id)
-			data = append(data, cu.Address.ID)
-			_, err = c.db.Exec(query, data...)
-			if err != nil {
-				log.Fatal(err)
-			}
-			var custIds []interface{}
-			custIds = append(custIds, id)
-			query2 := `SELECT * FROM Customers INNER JOIN Address on Customers.ID = Address.CustId  where Address.CustID =?`
-			ro, _ := c.db.Query(query2, custIds...)
-			defer  ro.Close()
-			var cu1 customer.Customer
-			for ro.Next() {
-				e := ro.Scan(&cu1.ID, &cu1.Name, &cu1.DOB, &cu1.Address.ID, &cu1.Address.City, &cu1.Address.State, &cu1.Address.StreetName, &cu1.Address.CustId)
-				if e != nil {
-					log.Fatal(e)
-				}
-
-			}
-			return cu1,nil
+	if customer2.Name != "" {
+		_, err := c.db.Exec("update Customers set Name=? where ID=?", customer2.Name, id)
+		if err != nil {
+			return customer.Customer{}, err
 		}
-		return customer.Customer{},errors.New("error")
+	}
+	var custId []interface{}
+	custId = append(custId, id)
+	q := `SELECT * FROM Customers INNER JOIN Address ON Customers.ID = Address.CustId  where Address.CustID =?`
+	r, _ := c.db.Query(q, custId...)
+	var cu customer.Customer
+	for r.Next() {
+		e := r.Scan(&cu.ID, &cu.Name, &cu.DOB, &cu.Address.ID, &cu.Address.City, &cu.Address.State, &cu.Address.StreetName, &cu.Address.CustId)
+		if e != nil {
+			return customer.Customer{}, err
+		}
+	}
+	var data []interface{}
+	query := "update Address set "
+	if customer2.Address.City != "" {
+		query += "City = ? ,"
+		data = append(data, customer2.Address.City)
+	}
+	if customer2.Address.State != "" {
+		query += "State = ? ,"
+		data = append(data, customer2.Address.State)
+	}
+	if customer2.Address.StreetName != "" {
+		query += "StreetName = ? ,"
+		data = append(data, customer2.Address.StreetName)
+	}
+	query = query[:len(query)-1]
+	query += "where CustId = ? and ID = ?"
+	data = append(data, id)
+	data = append(data, cu.Address.ID)
+	_, err = c.db.Exec(query, data...)
+	if err != nil {
+		return customer.Customer{}, err
+	}
+	var custIds []interface{}
+	custIds = append(custIds, id)
+	query2 := `SELECT * FROM Customers INNER JOIN Address on Customers.ID = Address.CustId  where Address.CustID =?`
+	ro, _ := c.db.Query(query2, custIds...)
+	defer ro.Close()
+	var cu1 customer.Customer
+	for ro.Next() {
+		e := ro.Scan(&cu1.ID, &cu1.Name, &cu1.DOB, &cu1.Address.ID, &cu1.Address.City, &cu1.Address.State, &cu1.Address.StreetName, &cu1.Address.CustId)
+		if e != nil {
+			return customer.Customer{}, e
+		}
+	}
+	return cu1, nil
 }
-func (c CustomerStorer) DeleteById(id int) (customer.Customer,error) {
+func (c CustomerStorer) DeleteById(id int) (customer.Customer, error) {
 	var ids []interface{}
 	ids = append(ids, id)
-	fmt.Println("id is ",id)
 	query := `SELECT * FROM Customers INNER JOIN Address ON Customers.ID = Address.CustId where Customers.ID = ?; `
 	rows, err := c.db.Query(query, ids...)
-	fmt.Println("in select exec")
 	if err != nil {
-		panic(err.Error())
+		return customer.Customer{}, err
 	}
-	fmt.Println("before rows.next")
-
-		var cust customer.Customer
-		for rows.Next() {
-			fmt.Println("before scan")
-			if err := rows.Scan(&cust.ID, &cust.Name, &cust.DOB, &cust.Address.ID, &cust.Address.City, &cust.Address.State, &cust.Address.StreetName, &cust.Address.CustId); err != nil {
-				log.Fatal(err)
-			}
-			fmt.Println("cust is in delete:",cust)
+	var cust customer.Customer
+	for rows.Next() {
+		if err := rows.Scan(&cust.ID, &cust.Name, &cust.DOB, &cust.Address.ID, &cust.Address.City, &cust.Address.State, &cust.Address.StreetName, &cust.Address.CustId); err != nil {
+			return customer.Customer{}, err
 		}
-		query = `DELETE  FROM Customers where ID =?; `
-		_, err1 := c.db.Exec(query, ids...)
-		fmt.Println("after exec")
-		if err1 != nil {
-			panic(err.Error())
-		}
-		fmt.Println("after err1")
-		defer rows.Close()
-		fmt.Println("after defer")
-		//var cust customer.Customer
-		//for rows.Next() {
-		//	if err := rows.Scan(&cust.ID, &cust.Name, &cust.DOB, &cust.Address.ID, &cust.Address.City, &cust.Address.State, &cust.Address.StreetName, &cust.Address.CustId); err != nil {
-		//		log.Fatal(err)
-		//	}
-		//	fmt.Println("cust is in delete:",cust)
-		//}
-		fmt.Println("after rows.next last line",cust)
-		return cust,nil
-	//}
+	}
+	query = `DELETE  FROM Customers where ID =?; `
+	_, err1 := c.db.Exec(query, ids...)
+	if err1 != nil {
+		return customer.Customer{}, err1
+	}
+	defer rows.Close()
+	return cust, nil
 }
